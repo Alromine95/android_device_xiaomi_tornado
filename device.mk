@@ -44,6 +44,10 @@ TW_INCLUDE_FASTBOOTD := true
 PRODUCT_PACKAGES += \
     android.hardware.fastboot@1.0-impl-mock
 
+PRODUCT_PACKAGES += \
+    mtk_plpath_utils.recovery
+
+
 # Boot HAL
 PRODUCT_PACKAGES += \
     android.hardware.boot@1.0-impl \
