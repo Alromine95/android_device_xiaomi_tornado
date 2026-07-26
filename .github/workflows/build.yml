@@ -3,110 +3,117 @@ name: Build TWRP Tornado
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Checkout Device Tree
+        uses: actions/checkout@v4
 
-    - name: Free Disk Space
-      uses: jlumbroso/free-disk-space@main
+      - name: Free Disk Space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          sudo docker system prune -af || true
+          df -h
 
-    - name: Install Dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          git-core gnupg flex bison build-essential zip curl \
-          zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-          lib32ncurses5-dev x11proto-core-dev libx11-dev \
-          lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc \
-          unzip fontconfig python3 python-is-python3 \
-          libssl-dev bc ccache lz4 rsync cpio
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git-core gnupg flex bison build-essential zip curl \
+            zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+            x11proto-core-dev libx11-dev lib32z1-dev \
+            libgl1-mesa-dev libxml2-utils xsltproc unzip \
+            python3 python-is-python3 cpio rsync bc lz4
 
-    - name: Install Repo
-      run: |
-        mkdir -p ~/bin
-        curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
-        chmod +x ~/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
+      - name: Install repo
+        run: |
+          mkdir -p ~/.local/bin
+          curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/.local/bin/repo
+          chmod +x ~/.local/bin/repo
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: Sync TWRP Source
-      run: |
-        mkdir -p /tmp/twrp
-        cd /tmp/twrp
+      - name: Initialize TWRP Source
+        run: |
+          mkdir -p /tmp/twrp
+          cd /tmp/twrp
+          repo init --depth=1 \
+            -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git \
+            -b twrp-12.1
+          repo sync -c --no-clone-bundle --no-tags -j2
 
-        repo init \
-          -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git \
-          -b twrp-12.1 \
-          --depth=1
+      - name: Copy Device Tree
+        run: |
+          mkdir -p /tmp/twrp/device/xiaomi/tornado
+          rsync -av \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.gitignore \
+            ./ /tmp/twrp/device/xiaomi/tornado/
 
-        repo sync \
-          -c \
-          --no-clone-bundle \
-          --no-tags \
-          -j$(nproc)
+      - name: Verify Device Tree
+        run: |
+          ls -lah /tmp/twrp/device/xiaomi/tornado
+          test -f /tmp/twrp/device/xiaomi/tornado/BoardConfig.mk
+          test -f /tmp/twrp/device/xiaomi/tornado/AndroidProducts.mk
+          test -f /tmp/twrp/device/xiaomi/tornado/omni_tornado.mk
 
-    - name: Checkout Device Tree
-      uses: actions/checkout@v4
-      with:
-        path: tornado_tree
+      - name: Build Recovery
+        run: |
+          cd /tmp/twrp
+          source build/envsetup.sh
+          lunch omni_tornado-eng
 
-    - name: Copy Tornado Tree
-      run: |
-        mkdir -p /tmp/twrp/device/xiaomi/tornado
+          echo "=== Available targets ==="
+          mka -n vendorbootimage || true
+          mka -n bootimage || true
+          mka -n recoveryimage || true
 
-        cp -a tornado_tree/. /tmp/twrp/device/xiaomi/tornado/
+          echo "=== Building ==="
+          mka vendorbootimage || true
+          mka bootimage || true
+          mka recoveryimage || true
 
-    - name: Check Device Tree
-      run: |
-        test -f /tmp/twrp/device/xiaomi/tornado/AndroidProducts.mk
-        test -f /tmp/twrp/device/xiaomi/tornado/omni_tornado.mk
-        test -f /tmp/twrp/device/xiaomi/tornado/BoardConfig.mk
+      - name: Debug Output
+        if: always()
+        run: |
+          echo "===== PRODUCT ====="
+          find /tmp/twrp/out/target/product -maxdepth 2 -type d || true
 
-        echo "Device tree OK"
+          echo "===== IMAGES ====="
+          find /tmp/twrp/out -type f \
+            \( -name "*.img" -o -name "*.zip" -o -name "*.bin" \) || true
 
-    - name: Build TWRP
-      run: |
-        cd /tmp/twrp
+          echo "===== PRODUCT CONTENT ====="
+          ls -R /tmp/twrp/out/target/product || true
 
-        source build/envsetup.sh
+      - name: Collect Artifacts
+        if: always()
+        run: |
+          mkdir -p /tmp/twrp_upload
 
-        lunch omni_tornado-eng
+          find /tmp/twrp/out \
+            -type f \
+            \( -name "*.img" -o -name "*.zip" -o -name "*.bin" \) \
+            -exec cp {} /tmp/twrp_upload/ \;
 
-        mka vendorbootimage -j$(nproc)
+          echo "Collected:"
+          ls -lah /tmp/twrp_upload || true
 
-    - name: Locate Output
-      if: always()
-      run: |
-        echo "Searching generated files..."
-
-        find /tmp/twrp/out \
-        -type f \
-        \( \
-        -name "*.img" \
-        -o -name "*.zip" \
-        \) \
-        -print
-
-    - name: Prepare Artifact
-      if: always()
-      run: |
-        mkdir -p /tmp/twrp_upload
-
-        find /tmp/twrp/out \
-        -type f \
-        \( \
-        -name "*.img" \
-        -o -name "*.zip" \
-        \) \
-        -exec cp {} /tmp/twrp_upload/ \;
-
-        ls -lah /tmp/twrp_upload
-
-    - name: Upload Build
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: tornado-twrp-build
-        path: /tmp/twrp_upload/
-        if-no-files-found: warn
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-tornado
+          path: /tmp/twrp_upload/
+          if-no-files-found: warn
