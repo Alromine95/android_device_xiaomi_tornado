@@ -46,17 +46,26 @@ jobs:
           --no-tags \
           -j$(nproc)
 
-    - name: Checkout Device Tree
+    - name: Checkout Tornado Tree
       uses: actions/checkout@v4
       with:
-        path: device_tree
+        path: tornado_tree
 
     - name: Copy Device Tree
       run: |
         mkdir -p /tmp/twrp/device/xiaomi/tornado
-        rsync -av device_tree/ /tmp/twrp/device/xiaomi/tornado/
 
-    - name: Build TWRP Vendor Boot
+        rsync -av \
+          --exclude=.git \
+          tornado_tree/ \
+          /tmp/twrp/device/xiaomi/tornado/
+
+    - name: Verify Device Tree
+      run: |
+        ls -lah /tmp/twrp/device/xiaomi/tornado
+        test -f /tmp/twrp/device/xiaomi/tornado/omni_tornado.mk
+
+    - name: Build TWRP
       run: |
         cd /tmp/twrp
 
@@ -64,12 +73,14 @@ jobs:
 
         lunch omni_tornado-eng
 
-        mka vendorbootimage
+        mka recoveryimage vendorbootimage -j$(nproc)
 
-    - name: Find Output Images
+    - name: Debug Build Output
       run: |
-        echo "Searching output..."
+        echo "===== PRODUCT DIRECTORY ====="
+        ls -lah /tmp/twrp/out/target/product/tornado || true
 
+        echo "===== ALL IMAGES ====="
         find /tmp/twrp/out \
           -type f \
           \( \
@@ -79,24 +90,26 @@ jobs:
           \) \
           -ls
 
-    - name: Collect Images
+    - name: Collect Artifacts
       run: |
         mkdir -p /tmp/twrp_artifacts
 
         find /tmp/twrp/out \
           -type f \
+          \( \
           -name "*.img" \
-          -exec cp {} /tmp/twrp_artifacts/ \;
-
-        find /tmp/twrp/out \
-          -type f \
+          -o \
           -name "*.zip" \
+          \) \
           -exec cp {} /tmp/twrp_artifacts/ \;
 
-        echo "Collected files:"
+        echo "===== ARTIFACTS ====="
         ls -lah /tmp/twrp_artifacts
 
-        test "$(ls -A /tmp/twrp_artifacts)" || exit 1
+        if [ -z "$(ls -A /tmp/twrp_artifacts)" ]; then
+          echo "No TWRP images were generated!"
+          exit 1
+        fi
 
     - name: Upload TWRP Images
       uses: actions/upload-artifact@v4
