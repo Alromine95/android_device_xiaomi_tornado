@@ -23,7 +23,7 @@ jobs:
           unzip fontconfig python3 python-is-python3 \
           libssl-dev bc ccache lz4 rsync cpio
 
-    - name: Install Repo Tool
+    - name: Install Repo
       run: |
         mkdir -p ~/bin
         curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
@@ -54,12 +54,9 @@ jobs:
     - name: Copy Device Tree
       run: |
         mkdir -p /tmp/twrp/device/xiaomi/tornado
-        rsync -av \
-          --exclude=.git \
-          device_tree/ \
-          /tmp/twrp/device/xiaomi/tornado/
+        rsync -av device_tree/ /tmp/twrp/device/xiaomi/tornado/
 
-    - name: Build Vendor Boot
+    - name: Build TWRP Vendor Boot
       run: |
         cd /tmp/twrp
 
@@ -69,9 +66,10 @@ jobs:
 
         mka vendorbootimage
 
-    - name: Search Build Output
+    - name: Find Output Images
       run: |
-        echo "Searching images..."
+        echo "Searching output..."
+
         find /tmp/twrp/out \
           -type f \
           \( \
@@ -81,24 +79,24 @@ jobs:
           \) \
           -ls
 
-    - name: Prepare Artifact Folder
+    - name: Collect Images
       run: |
         mkdir -p /tmp/twrp_artifacts
 
         find /tmp/twrp/out \
           -type f \
-          \( \
-          -name "vendor_boot.img" \
-          -o \
-          -name "boot.img" \
-          -o \
-          -name "recovery.img" \
-          -o \
-          -name "*.zip" \
-          \) \
+          -name "*.img" \
           -exec cp {} /tmp/twrp_artifacts/ \;
 
+        find /tmp/twrp/out \
+          -type f \
+          -name "*.zip" \
+          -exec cp {} /tmp/twrp_artifacts/ \;
+
+        echo "Collected files:"
         ls -lah /tmp/twrp_artifacts
+
+        test "$(ls -A /tmp/twrp_artifacts)" || exit 1
 
     - name: Upload TWRP Images
       uses: actions/upload-artifact@v4
