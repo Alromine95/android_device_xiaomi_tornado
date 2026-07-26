@@ -1,4 +1,4 @@
-name: Build TWRP
+name: Build TWRP Tornado
 
 on:
   workflow_dispatch:
@@ -8,59 +8,101 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+
     - name: Free Disk Space
       uses: jlumbroso/free-disk-space@main
 
-    - name: Install dependencies
+    - name: Install Dependencies
       run: |
         sudo apt update
         sudo apt install -y \
-          git-core gnupg flex bison build-essential zip curl zlib1g-dev \
-          gcc-multilib g++-multilib libc6-dev-i386 \
-          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
-          libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig \
-          python3 python-is-python3 libssl-dev bc ccache lz4
+          git-core gnupg flex bison build-essential zip curl \
+          zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+          lib32ncurses5-dev x11proto-core-dev libx11-dev \
+          lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc \
+          unzip fontconfig python3 python-is-python3 \
+          libssl-dev bc ccache lz4 rsync cpio
 
-    - name: Install repo
+    - name: Install Repo Tool
       run: |
         mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
+        curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
+        chmod +x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Init minimal TWRP source
+    - name: Initialize TWRP Source
       run: |
-        mkdir /tmp/twrp
+        mkdir -p /tmp/twrp
         cd /tmp/twrp
-        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
-        repo sync -c --no-clone-bundle --no-tags -j$(nproc)
 
-    - name: Checkout device tree
+        repo init \
+          --depth=1 \
+          -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git \
+          -b twrp-12.1
+
+        repo sync \
+          -c \
+          --no-clone-bundle \
+          --no-tags \
+          -j$(nproc)
+
+    - name: Checkout Device Tree
       uses: actions/checkout@v4
       with:
         path: device_tree
-        
-    - name: Copy device tree
-      run: |
-        mkdir -p /tmp/twrp/device/xiaomi
-        cp -a device_tree /tmp/twrp/device/xiaomi/tornado
 
-    - name: Build Recovery
+    - name: Copy Device Tree
+      run: |
+        mkdir -p /tmp/twrp/device/xiaomi/tornado
+        rsync -av \
+          --exclude=.git \
+          device_tree/ \
+          /tmp/twrp/device/xiaomi/tornado/
+
+    - name: Build Vendor Boot
       run: |
         cd /tmp/twrp
+
         source build/envsetup.sh
+
         lunch omni_tornado-eng
+
         mka vendorbootimage
 
-    - name: Find Images
+    - name: Search Build Output
       run: |
-        find /tmp/twrp/out/target/product/tornado -type f \( -name "*.img" -o -name "*.zip" \) -ls
+        echo "Searching images..."
+        find /tmp/twrp/out \
+          -type f \
+          \( \
+          -name "*.img" \
+          -o \
+          -name "*.zip" \
+          \) \
+          -ls
+
+    - name: Prepare Artifact Folder
+      run: |
+        mkdir -p /tmp/twrp_artifacts
+
+        find /tmp/twrp/out \
+          -type f \
+          \( \
+          -name "vendor_boot.img" \
+          -o \
+          -name "boot.img" \
+          -o \
+          -name "recovery.img" \
+          -o \
+          -name "*.zip" \
+          \) \
+          -exec cp {} /tmp/twrp_artifacts/ \;
+
+        ls -lah /tmp/twrp_artifacts
 
     - name: Upload TWRP Images
       uses: actions/upload-artifact@v4
       with:
-        name: twrp-tornado
-        path: |
-          /tmp/twrp/out/target/product/tornado/*.img
-          /tmp/twrp/out/target/product/tornado/*.zip
+        name: TWRP-tornado
+        path: /tmp/twrp_artifacts/*
         if-no-files-found: error
