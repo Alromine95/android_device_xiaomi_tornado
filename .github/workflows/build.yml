@@ -23,7 +23,7 @@ jobs:
           unzip fontconfig python3 python-is-python3 \
           libssl-dev bc ccache lz4 rsync cpio
 
-    - name: Install Repo
+    - name: Install Repo Tool
       run: |
         mkdir -p ~/bin
         curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
@@ -46,7 +46,7 @@ jobs:
           --no-tags \
           -j$(nproc)
 
-    - name: Checkout Tornado Tree
+    - name: Checkout Tornado Device Tree
       uses: actions/checkout@v4
       with:
         path: tornado_tree
@@ -57,15 +57,19 @@ jobs:
 
         rsync -av \
           --exclude=.git \
+          --exclude=.github \
           tornado_tree/ \
           /tmp/twrp/device/xiaomi/tornado/
 
     - name: Verify Device Tree
       run: |
         ls -lah /tmp/twrp/device/xiaomi/tornado
-        test -f /tmp/twrp/device/xiaomi/tornado/omni_tornado.mk
 
-    - name: Build TWRP
+        test -f /tmp/twrp/device/xiaomi/tornado/AndroidProducts.mk
+        test -f /tmp/twrp/device/xiaomi/tornado/omni_tornado.mk
+        test -f /tmp/twrp/device/xiaomi/tornado/BoardConfig.mk
+
+    - name: Build TWRP Vendor Boot
       run: |
         cd /tmp/twrp
 
@@ -73,33 +77,32 @@ jobs:
 
         lunch omni_tornado-eng
 
-        mka recoveryimage vendorbootimage -j$(nproc)
+        mka vendorbootimage -j$(nproc)
 
-    - name: Debug Build Output
+    - name: Search Build Output
+      if: always()
       run: |
-        echo "===== PRODUCT DIRECTORY ====="
+        echo "===== PRODUCT DIR ====="
         ls -lah /tmp/twrp/out/target/product/tornado || true
 
-        echo "===== ALL IMAGES ====="
+        echo "===== IMAGES ====="
         find /tmp/twrp/out \
           -type f \
           \( \
           -name "*.img" \
-          -o \
-          -name "*.zip" \
+          -o -name "*.zip" \
           \) \
-          -ls
+          -ls || true
 
-    - name: Collect Artifacts
+    - name: Collect TWRP Files
       run: |
         mkdir -p /tmp/twrp_artifacts
 
-        find /tmp/twrp/out \
+        find /tmp/twrp/out/target/product/tornado \
           -type f \
           \( \
           -name "*.img" \
-          -o \
-          -name "*.zip" \
+          -o -name "*.zip" \
           \) \
           -exec cp {} /tmp/twrp_artifacts/ \;
 
@@ -107,11 +110,11 @@ jobs:
         ls -lah /tmp/twrp_artifacts
 
         if [ -z "$(ls -A /tmp/twrp_artifacts)" ]; then
-          echo "No TWRP images were generated!"
+          echo "No TWRP image generated"
           exit 1
         fi
 
-    - name: Upload TWRP Images
+    - name: Upload TWRP
       uses: actions/upload-artifact@v4
       with:
         name: TWRP-tornado
