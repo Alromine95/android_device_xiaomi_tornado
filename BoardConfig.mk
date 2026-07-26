@@ -19,6 +19,7 @@ AB_OTA_PARTITIONS += \
     product \
     system_dlkm \
     boot \
+    vendor_boot \
     vendor \
     vendor_dlkm \
     system \
@@ -55,6 +56,8 @@ TARGET_SCREEN_DENSITY := 320
 
 # Kernel
 BOARD_BOOTIMG_HEADER_VERSION := 4
+BOARD_USES_VENDOR_BOOTIMAGE := true
+BOARD_USES_RECOVERY_AS_BOOT := true
 BOARD_KERNEL_BASE := 0x3fff8000
 BOARD_KERNEL_CMDLINE := bootopt=64S3,32N2,64N2
 BOARD_KERNEL_PAGESIZE := 4096
@@ -64,7 +67,6 @@ BOARD_MKBOOTIMG_ARGS += --header_version $(BOARD_BOOTIMG_HEADER_VERSION)
 BOARD_MKBOOTIMG_ARGS += --ramdisk_offset $(BOARD_RAMDISK_OFFSET)
 BOARD_MKBOOTIMG_ARGS += --tags_offset $(BOARD_KERNEL_TAGS_OFFSET)
 BOARD_KERNEL_IMAGE_NAME := Image
-BOARD_INCLUDE_DTB_IN_BOOTIMG := true
 TARGET_KERNEL_CONFIG := tornado_defconfig
 TARGET_KERNEL_SOURCE := kernel/xiaomi/tornado
 
@@ -74,7 +76,6 @@ ifeq ($(TARGET_FORCE_PREBUILT_KERNEL),true)
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
 TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
 BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
-BOARD_INCLUDE_DTB_IN_BOOTIMG := 
 endif
 
 # Partitions
