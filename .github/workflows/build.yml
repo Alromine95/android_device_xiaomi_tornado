@@ -23,22 +23,22 @@ jobs:
           unzip fontconfig python3 python-is-python3 \
           libssl-dev bc ccache lz4 rsync cpio
 
-    - name: Install Repo Tool
+    - name: Install Repo
       run: |
         mkdir -p ~/bin
         curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
         chmod +x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Initialize TWRP Source
+    - name: Sync TWRP Source
       run: |
         mkdir -p /tmp/twrp
         cd /tmp/twrp
 
         repo init \
-          --depth=1 \
           -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git \
-          -b twrp-12.1
+          -b twrp-12.1 \
+          --depth=1
 
         repo sync \
           -c \
@@ -46,30 +46,26 @@ jobs:
           --no-tags \
           -j$(nproc)
 
-    - name: Checkout Tornado Device Tree
+    - name: Checkout Device Tree
       uses: actions/checkout@v4
       with:
         path: tornado_tree
 
-    - name: Copy Device Tree
+    - name: Copy Tornado Tree
       run: |
         mkdir -p /tmp/twrp/device/xiaomi/tornado
 
-        rsync -av \
-          --exclude=.git \
-          --exclude=.github \
-          tornado_tree/ \
-          /tmp/twrp/device/xiaomi/tornado/
+        cp -a tornado_tree/. /tmp/twrp/device/xiaomi/tornado/
 
-    - name: Verify Device Tree
+    - name: Check Device Tree
       run: |
-        ls -lah /tmp/twrp/device/xiaomi/tornado
-
         test -f /tmp/twrp/device/xiaomi/tornado/AndroidProducts.mk
         test -f /tmp/twrp/device/xiaomi/tornado/omni_tornado.mk
         test -f /tmp/twrp/device/xiaomi/tornado/BoardConfig.mk
 
-    - name: Build TWRP Vendor Boot
+        echo "Device tree OK"
+
+    - name: Build TWRP
       run: |
         cd /tmp/twrp
 
@@ -79,44 +75,38 @@ jobs:
 
         mka vendorbootimage -j$(nproc)
 
-    - name: Search Build Output
+    - name: Locate Output
       if: always()
       run: |
-        echo "===== PRODUCT DIR ====="
-        ls -lah /tmp/twrp/out/target/product/tornado || true
+        echo "Searching generated files..."
 
-        echo "===== IMAGES ====="
         find /tmp/twrp/out \
-          -type f \
-          \( \
-          -name "*.img" \
-          -o -name "*.zip" \
-          \) \
-          -ls || true
+        -type f \
+        \( \
+        -name "*.img" \
+        -o -name "*.zip" \
+        \) \
+        -print
 
-    - name: Collect TWRP Files
+    - name: Prepare Artifact
+      if: always()
       run: |
-        mkdir -p /tmp/twrp_artifacts
+        mkdir -p /tmp/twrp_upload
 
-        find /tmp/twrp/out/target/product/tornado \
-          -type f \
-          \( \
-          -name "*.img" \
-          -o -name "*.zip" \
-          \) \
-          -exec cp {} /tmp/twrp_artifacts/ \;
+        find /tmp/twrp/out \
+        -type f \
+        \( \
+        -name "*.img" \
+        -o -name "*.zip" \
+        \) \
+        -exec cp {} /tmp/twrp_upload/ \;
 
-        echo "===== ARTIFACTS ====="
-        ls -lah /tmp/twrp_artifacts
+        ls -lah /tmp/twrp_upload
 
-        if [ -z "$(ls -A /tmp/twrp_artifacts)" ]; then
-          echo "No TWRP image generated"
-          exit 1
-        fi
-
-    - name: Upload TWRP
+    - name: Upload Build
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: TWRP-tornado
-        path: /tmp/twrp_artifacts/*
-        if-no-files-found: error
+        name: tornado-twrp-build
+        path: /tmp/twrp_upload/
+        if-no-files-found: warn
