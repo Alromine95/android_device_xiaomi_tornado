@@ -1,0 +1,61 @@
+name: Build TWRP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Free Disk Space
+      uses: jlumbroso/free-disk-space@main
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          git-core gnupg flex bison build-essential zip curl zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 \
+          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev \
+          libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig \
+          python3 python-is-python3 libssl-dev bc ccache lz4
+
+    - name: Install repo
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "$HOME/bin" >> $GITHUB_PATH
+
+    - name: Init minimal TWRP source
+      run: |
+        mkdir /tmp/twrp
+        cd /tmp/twrp
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
+        repo sync -c --no-clone-bundle --no-tags -j$(nproc)
+
+    - name: Checkout device tree
+      uses: actions/checkout@v4
+      with:
+        path: device_tree
+
+    - name: Copy device tree
+      run: |
+        mkdir -p /tmp/twrp/device/xiaomi
+        cp -a device_tree /tmp/twrp/device/xiaomi/tornado
+
+    - name: Build Recovery
+      run: |
+        cd /tmp/twrp
+        source build/envsetup.sh
+        lunch omni_tornado-eng
+        mka vendorbootimage
+
+    - name: Upload image
+      uses: actions/upload-artifact@v4
+      with:
+        name: twrp-vendorboot
+        path: |
+          /tmp/twrp/out/target/product/tornado/vendor_boot.img
+          /tmp/twrp/out/target/product/tornado/recovery.img
